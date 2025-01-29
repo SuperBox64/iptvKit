@@ -9,7 +9,7 @@ import Foundation
 
 // MARK: - Category
 public struct Category: Codable {
-    public let categoryID: String
+    public var categoryID: String
     public var categoryName: String
     public let parentID: Int
     public var uuid: UUID = UUID()

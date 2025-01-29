@@ -31,15 +31,17 @@ func getCategories() {
     let action = Actions.getLiveCategoriesAction.rawValue
     let endpoint = api.getEndpoint(creds, iptv, action)
     
-    rest.getRequest(endpoint: endpoint) {  (categories) in
+    rest.getRequest(endpoint: endpoint) { (categories) in
         guard let categories = categories else {
+            print("Error: Failed to get categories data")
             LoginObservable.shared.status = "Get Categories Error"
             setCurrentStep = .CategoriesError
             awaitDone = false
             return
         }
         
-        if let catz = try? decoder.decode(Categories.self, from: categories) {
+        do {
+            let catz = try decoder.decode(Categories.self, from: categories)
             cats = catz
             for (i,cat) in catz.enumerated() {
                 let nam = cat.categoryName.components(separatedBy: " ")
@@ -56,6 +58,11 @@ func getCategories() {
                 cats[i].categoryName = catName
                 cats[i].categoryName.removeLast()
             }
+        } catch {
+            print("Error decoding categories: \(error)")
+            LoginObservable.shared.status = "Categories Decode Error"
+            setCurrentStep = .CategoriesError
+            awaitDone = false
         }
         
         //Adult channels are not allowed
@@ -77,15 +84,16 @@ func getConfig() {
     let action = Actions.configAction.rawValue
     let endpoint = api.getEndpoint(creds, iptv, action)
     
-    func loginError() {
-        LoginObservable.shared.status = "Login Error"
+    func loginError(_ message: String = "Login Error") {
+        print("Configuration error: \(message)")
+        LoginObservable.shared.status = message
         setCurrentStep = .ConfigurationError
         awaitDone = false
     }
     
     rest.getRequest(endpoint: endpoint) { login in
         guard let login = login else {
-            loginError()
+            loginError("No configuration data received")
             return
         }
         
@@ -101,8 +109,8 @@ func getConfig() {
             saveUserDefaults()
             awaitDone = true
         } catch {
-            print(error)
-            loginError()
+            print("Error decoding configuration: \(error)")
+            loginError("Configuration decode error")
         }
     }
 }
@@ -113,6 +121,7 @@ public func getShortEpg(streamId: Int, channelName: String, imageURL: String) {
     
     rest.getRequest(endpoint: endpoint) { (programguide) in
         guard let programguide = programguide else {
+            print("Error: Failed to get EPG data for stream ID: \(streamId)")
             LoginObservable.shared.status = "Get Short EPG Error"
             return
         }
@@ -121,24 +130,23 @@ public func getShortEpg(streamId: Int, channelName: String, imageURL: String) {
             let epg = try decoder.decode(ShortIPTVEpg.self, from: programguide)
             shortEpg = epg
             PlayerObservable.plo.miniEpg = shortEpg?.epgListings ?? []
-            
-            /*  DispatchQueue.global().async {
-             if let url = URL(string: imageURL) {
-             let data = try? Data(contentsOf: url)
-             DispatchQueue.main.async {
-             
-             if let data = data, let image = UIImage(data: data), !channelName.isEmpty {
-             setnowPlayingInfo(channelName: channelName, image: image)
-             } else if !channelName.isEmpty {
-             setnowPlayingInfo(channelName: channelName, image: nil)
-             }
-             }
-             }
-             } */
         } catch {
-            print(error)
+            print("Error decoding EPG data: \(error)")
+            if let decodingError = error as? DecodingError {
+                switch decodingError {
+                case .keyNotFound(let key, let context):
+                    print("Missing key: \(key.stringValue), context: \(context.debugDescription)")
+                case .typeMismatch(let type, let context):
+                    print("Type mismatch: expected \(type), context: \(context.debugDescription)")
+                case .valueNotFound(let type, let context):
+                    print("Value missing: expected \(type), context: \(context.debugDescription)")
+                case .dataCorrupted(let context):
+                    print("Data corrupted: \(context.debugDescription)")
+                @unknown default:
+                    print("Unknown decoding error: \(decodingError)")
+                }
+            }
         }
-        
     }
 }
 
@@ -261,22 +269,29 @@ func getChannels() {
     do {
         channelsData = try Data(contentsOf: file)
     } catch {
-        print(error)
+        print("Error reading channels cache: \(error)")
     }
     
     if channelsData.count == 0 {
         rest.getRequest(endpoint: endpoint) { data in
             guard let data = data else {
-                
+                print("Error: Failed to get channels data")
                 LoginObservable.shared.status = "Get Live Streams Error"
                 setCurrentStep = .ConfigurationError
                 awaitDone = false
                 return
             }
             
-            try? data.write(to: file)
+            do {
+                try data.write(to: file)
+            } catch {
+                print("Error writing channels cache: \(error)")
+            }
 
             do {
+//                let jsonObject = try JSONSerialization.jsonObject(with: data, options: .fragmentsAllowed)
+//                print(jsonObject)
+                
                 ChannelsObservable.shared.chan = try decoder.decode(Channels.self, from: data).sorted { $0.name < $1.name }
                 for (index, ch) in ChannelsObservable.shared.chan.enumerated() where filter.contains(ch.name) {
                     
@@ -288,12 +303,25 @@ func getChannels() {
                 }
                 
             } catch {
+                print("Error decoding channels data: \(error)")
+                if let decodingError = error as? DecodingError {
+                    switch decodingError {
+                    case .keyNotFound(let key, let context):
+                        print("Missing key: \(key.stringValue), context: \(context.debugDescription)")
+                    case .typeMismatch(let type, let context):
+                        print("Type mismatch: expected \(type), context: \(context.debugDescription)")
+                    case .valueNotFound(let type, let context):
+                        print("Value missing: expected \(type), context: \(context.debugDescription)")
+                    case .dataCorrupted(let context):
+                        print("Data corrupted: \(context.debugDescription)")
+                    @unknown default:
+                        print("Unknown decoding error: \(decodingError)")
+                    }
+                }
                 try? clearCache.write(to: file)
-
                 awaitDone = false
                 LoginObservable.shared.status = "Get Streams Error"
                 setCurrentStep = .ConfigurationError
-                print(error)
             }
             
            // refreshNowPlayingEpg()
@@ -412,12 +440,28 @@ public func getVideoOnDemandSeries() {
     rest.getRequest(endpoint: endpoint) { (data) in
         
         guard let data = data else {
-            print("\(action) error")
+            print("Error: Failed to get video on demand series data")
             return
         }
         
-        if let seriesCategories = try? decoder.decode([SeriesCategory].self, from: data) {
-            SeriesCatObservable.shared.seriesCat = seriesCategories
+        do {
+            SeriesCatObservable.shared.seriesCat = try decoder.decode([SeriesCategory].self, from: data)
+        } catch {
+            print("Error decoding series categories: \(error)")
+            if let decodingError = error as? DecodingError {
+                switch decodingError {
+                case .keyNotFound(let key, let context):
+                    print("Missing key: \(key.stringValue), context: \(context.debugDescription)")
+                case .typeMismatch(let type, let context):
+                    print("Type mismatch: expected \(type), context: \(context.debugDescription)")
+                case .valueNotFound(let type, let context):
+                    print("Value missing: expected \(type), context: \(context.debugDescription)")
+                case .dataCorrupted(let context):
+                    print("Data corrupted: \(context.debugDescription)")
+                @unknown default:
+                    print("Unknown decoding error: \(decodingError)")
+                }
+            }
         }
     }
 }
@@ -425,16 +469,30 @@ public func getVideoOnDemandSeries() {
 public func getVideoOnDemandSeriesItems(categoryID: String) {
     let action = Actions.getSeries.rawValue
     let endpoint = api.getTVSeriesEndpoint(creds, iptv, action, categoryID)
-    
     rest.getRequest(endpoint: endpoint) { (data) in
-        
         guard let data = data else {
-            print("\(action) error")
+            print("Error: Failed to get series items for category ID: \(categoryID)")
             return
         }
         
-        if let seriesTVShows = try? decoder.decode([SeriesTVShow].self, from: data) {
-            SeriesTVObservable.shared.seriesTVShows = seriesTVShows
+        do {
+            SeriesTVObservable.shared.seriesTVShows = try decoder.decode([SeriesTVShow].self, from: data)
+        } catch {
+            print("Error decoding series items: \(error)")
+            if let decodingError = error as? DecodingError {
+                switch decodingError {
+                case .keyNotFound(let key, let context):
+                    print("Missing key: \(key.stringValue), context: \(context.debugDescription)")
+                case .typeMismatch(let type, let context):
+                    print("Type mismatch: expected \(type), context: \(context.debugDescription)")
+                case .valueNotFound(let type, let context):
+                    print("Value missing: expected \(type), context: \(context.debugDescription)")
+                case .dataCorrupted(let context):
+                    print("Data corrupted: \(context.debugDescription)")
+                @unknown default:
+                    print("Unknown decoding error: \(decodingError)")
+                }
+            }
         }
     }
 }
@@ -444,9 +502,8 @@ public func getVideoOnDemandSeriesInfo(seriesID: String) {
     let endpoint = api.getTVSeriesInfoEndpoint(creds, iptv, action, seriesID)
     
     rest.getRequest(endpoint: endpoint) { data in
-        
         guard let data = data else {
-            print("\(action) error")
+            print("Error: Failed to get series info for ID: \(seriesID)")
             return
         }
         
@@ -455,9 +512,22 @@ public func getVideoOnDemandSeriesInfo(seriesID: String) {
             if let episodes = seriesTVShows.episodes {
                 SeriesTVObservable.shared.episodes = episodes
             }
-        }
-        catch {
-            print(error)
+        } catch {
+            print("Error decoding series info: \(error)")
+            if let decodingError = error as? DecodingError {
+                switch decodingError {
+                case .keyNotFound(let key, let context):
+                    print("Missing key: \(key.stringValue), context: \(context.debugDescription)")
+                case .typeMismatch(let type, let context):
+                    print("Type mismatch: expected \(type), context: \(context.debugDescription)")
+                case .valueNotFound(let type, let context):
+                    print("Value missing: expected \(type), context: \(context.debugDescription)")
+                case .dataCorrupted(let context):
+                    print("Data corrupted: \(context.debugDescription)")
+                @unknown default:
+                    print("Unknown decoding error: \(decodingError)")
+                }
+            }
         }
     }
 }

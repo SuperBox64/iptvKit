@@ -9,9 +9,8 @@ import Foundation
 public class Rest: NSObject, URLSessionDelegate {
     public func getRequest(endpoint: URLComponents, DataHandler: @escaping DataHandler)  {
         
-        guard
-            let url = endpoint.url
-        else {
+        guard let url = endpoint.url else {
+            //print("Error: Invalid URL from endpoint: \(endpoint)")
             DataHandler(nil)
             return
         }
@@ -24,10 +23,26 @@ public class Rest: NSObject, URLSessionDelegate {
         let session = URLSession(configuration: configuration, delegate: self, delegateQueue:OperationQueue.current)
         
         let task = session.dataTask(with: urlReq) { ( data, response, error ) in
+            if let error = error {
+                print("Network error: \(error.localizedDescription)")
+                DataHandler(nil)
+                return
+            }
+            
+            guard let httpResponse = response as? HTTPURLResponse else {
+                print("Error: Invalid HTTP response")
+                DataHandler(nil)
+                return
+            }
+            
+            guard (200...299).contains(httpResponse.statusCode) else {
+                //print("HTTP Error: Status code \(httpResponse.statusCode)")
+                DataHandler(nil)
+                return
+            }
 
-            guard
-                let data = data
-            else {
+            guard let data = data else {
+                //print("Error: No data received")
                 DataHandler(nil)
                 return
             }
@@ -39,19 +54,41 @@ public class Rest: NSObject, URLSessionDelegate {
     }
     
     public func textAsync(url: String, TextHandler: @escaping TextHandler)  {
-
-        guard let url = URL(string: url) else { TextHandler("error1"); return}
+        guard let url = URL(string: url) else { 
+            //print("Error: Invalid URL string: \(url)")
+            TextHandler("error1")
+            return
+        }
                 
         var urlReq = URLRequest(url: url)
         urlReq.httpMethod = "GET"
         urlReq.timeoutInterval = TimeInterval(60)
         urlReq.cachePolicy = .reloadIgnoringCacheData
-        let task = URLSession.shared.dataTask(with: urlReq ) { ( data, _, _ ) in
+        let task = URLSession.shared.dataTask(with: urlReq ) { ( data, response, error ) in
+            if let error = error {
+                print("Network error in textAsync: \(error.localizedDescription)")
+                TextHandler("error2")
+                return
+            }
+            
+            guard let httpResponse = response as? HTTPURLResponse else {
+                print("Error: Invalid HTTP response in textAsync")
+                TextHandler("error2")
+                return
+            }
+            
+            guard (200...299).contains(httpResponse.statusCode) else {
+                //print("HTTP Error in textAsync: Status code \(httpResponse.statusCode)")
+                TextHandler("error2")
+                return
+            }
 
-            guard
-                let data = data,
-                let text = String(data: data, encoding: .utf8)
-            else { TextHandler("error2"); return }
+            guard let data = data,
+                  let text = String(data: data, encoding: .utf8) else {
+                //print("Error: Could not decode text response")
+                TextHandler("error2")
+                return 
+            }
             
             TextHandler(text)
         }
@@ -60,10 +97,8 @@ public class Rest: NSObject, URLSessionDelegate {
     }
     
     public func videoAsync(url: URL?, VideoHandler: @escaping VideoHandler)  {
-        
-        guard
-            let url = url
-        else {
+        guard let url = url else {
+            //print("Error: Invalid video URL")
             VideoHandler(Data())
             return
         }
@@ -73,10 +108,27 @@ public class Rest: NSObject, URLSessionDelegate {
         urlReq.timeoutInterval = TimeInterval(60)
         urlReq.cachePolicy = .reloadIgnoringCacheData
    
-        let task = URLSession.shared.dataTask(with: urlReq) {(data, _, _) in
-            guard
-                let data = data
-            else {
+        let task = URLSession.shared.dataTask(with: urlReq) {(data, response, error) in
+            if let error = error {
+                print("Network error in videoAsync: \(error.localizedDescription)")
+                VideoHandler(Data())
+                return
+            }
+            
+            guard let httpResponse = response as? HTTPURLResponse else {
+                print("Error: Invalid HTTP response in videoAsync")
+                VideoHandler(Data())
+                return
+            }
+            
+            guard (200...299).contains(httpResponse.statusCode) else {
+                //print("HTTP Error in videoAsync: Status code \(httpResponse.statusCode)")
+                VideoHandler(Data())
+                return
+            }
+            
+            guard let data = data else {
+                //print("Error: No video data received")
                 VideoHandler(Data())
                 return
             }

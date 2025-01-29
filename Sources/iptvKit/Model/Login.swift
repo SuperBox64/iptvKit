@@ -26,7 +26,7 @@ public func login(_ user: String,_ pass: String,_ host: String,_ port: String) {
         
         setCurrentStep = .config
         
-        //print(user,pass)
+        ////print(user,pass)
     }
 }
 

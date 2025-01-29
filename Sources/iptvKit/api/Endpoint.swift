@@ -23,7 +23,7 @@ func movieEndpoint(user: String, pass: String, serv: String, svpt: String, smid:
     movieEndpoint.port = 8888
     movieEndpoint.path = "/movie/\(user)/\(pass)/\(serv)/\(svpt)/\(smid)/\(extn)/hls.m3u8"
 
-    //print(movieEndpoint)
+    ////print(movieEndpoint)
     return movieEndpoint
 }
 

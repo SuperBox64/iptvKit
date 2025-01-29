@@ -16,13 +16,13 @@ public struct TVSeriesInfo: Codable {
     public struct Episode: Codable {
         public let id: String
         public let episodeNum: SuperInt
-        
         public let title: String
         public let containerExtension: String
         public let info: EpisodeInfo
         public let added: String
         public let season: Int
         public let uuid: UUID = UUID()
+        
         enum CodingKeys: String, CodingKey {
             case id = "id"
             case episodeNum = "episode_num"
@@ -33,8 +33,6 @@ public struct TVSeriesInfo: Codable {
             case season = "season"
         }
     }
-    
-    
     
     enum ContainerExtension: String, Codable {
         case mkv = "mkv"
